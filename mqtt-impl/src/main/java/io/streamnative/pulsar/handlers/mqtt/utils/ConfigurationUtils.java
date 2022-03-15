@@ -2,9 +2,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,20 +13,27 @@
  */
 package io.streamnative.pulsar.handlers.mqtt.utils;
 
+import org.apache.commons.lang3.StringUtils;
+import org.apache.pulsar.common.configuration.PulsarConfiguration;
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Stream;
+
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
 import static org.apache.pulsar.common.util.FieldParser.setEmptyValue;
 import static org.apache.pulsar.common.util.FieldParser.value;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.lang.reflect.Field;
-import java.util.Map;
-import java.util.Properties;
-import java.util.stream.Stream;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.pulsar.common.configuration.PulsarConfiguration;
 
 /**
  * Configuration Utils.
@@ -86,7 +93,7 @@ public final class ConfigurationUtils {
      * @throws IOException
      * @throws IllegalArgumentException
      */
-    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public static <T extends PulsarConfiguration> T create(
             Properties properties,
             Class<? extends PulsarConfiguration> clazz) throws IOException, IllegalArgumentException {
@@ -132,7 +139,7 @@ public final class ConfigurationUtils {
                     }
                 } catch (Exception e) {
                     throw new IllegalArgumentException(format("failed to initialize %s field while setting value %s",
-                        f.getName(), properties.get(f.getName())), e);
+                            f.getName(), properties.get(f.getName())), e);
                 }
             }
         });
@@ -146,6 +153,74 @@ public final class ConfigurationUtils {
         return Integer.parseInt(listener.substring(lastIndex + 1));
     }
 
-    private ConfigurationUtils() {}
+    private ConfigurationUtils() {
+    }
+
+    /**
+     * Parse PulsarConfiguration fields and put them into PulsarConfiguration's properties field
+     *
+     * @param configuration
+     */
+    public static void extractFieldToProperties(PulsarConfiguration configuration) {
+        Class<?> clazz = configuration.getClass();
+        while (clazz != Object.class) {
+            Field[] declaredFields = clazz.getDeclaredFields();
+            for (Field field : declaredFields) {
+                if (field.getType() == Properties.class) {
+                    // skip properties field
+                    continue;
+                }
+                field.setAccessible(true);
+                Object fieldValue = field.get(configuration);
+                if (fieldValue == null) {
+                    // skip null field
+                    continue;
+                }
+                String fieldName = field.getName();
+                String value = toConfigStr(fieldValue, field);
+                configuration.getProperties().put(fieldName, value);
+            }
+            clazz = clazz.getSuperclass();
+        }
+    }
+
+    private static String toConfigStr(Object fieldValue, Field field) {
+        Type fieldType = field.getGenericType();
+        if (fieldType instanceof ParameterizedType) {
+            if (field.getType().equals(List.class)) {
+                return listToString(fieldValue);
+            } else if (field.getType().equals(Set.class)) {
+                return setToString(fieldValue);
+            } else if (field.getType().equals(Map.class)) {
+                return mapToString(fieldValue);
+            } else if (field.getType().equals(Optional.class)) {
+                Type typeClazz = ((ParameterizedType) fieldType).getActualTypeArguments()[0];
+                if (typeClazz instanceof ParameterizedType) {
+                    throw new IllegalArgumentException(String.format("unsupported non-primitive Optional<%s> for %s", typeClazz.getClass(), field.getName()));
+                } else {
+                    return fieldValue.toString();
+                }
+            } else {
+                throw new IllegalArgumentException(String.format("unsupported field-type %s for %s", field.getType(), field.getName()));
+            }
+        } else {
+            return fieldValue.toString();
+        }
+    }
+
+    private static String mapToString(Object fieldValue) {
+        // todo
+        return null;
+    }
+
+    private static String setToString(Object fieldValue) {
+        // todo
+        return null;
+    }
+
+    private static String listToString(Object fieldValue) {
+        // todo
+        return null;
+    }
 
 }
